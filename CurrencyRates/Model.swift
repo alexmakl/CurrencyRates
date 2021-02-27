@@ -24,6 +24,7 @@ class Model: NSObject, XMLParserDelegate {
     static let shared = Model()
     
     var currencies: [Currency] = []
+    var currentDate: String = ""
     
     var pathForXML: String {
         let path = NSSearchPathForDirectoriesInDomains(FileManager.SearchPathDirectory.libraryDirectory, FileManager.SearchPathDomainMask.userDomainMask, true)[0]+"/data.xml"
@@ -39,8 +40,35 @@ class Model: NSObject, XMLParserDelegate {
     }
     
     //Загрузка XML с cbr.ru и сохранение его в каталоге приложения
-    func loadXMLFile(data: Data){
+    func loadXMLFile(date: Date?){
+        var strUrl = "http://www.cbr.ru/scripts/XML_daily.asp?date_req="
+        if date != nil {
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "dd/MM/yyyy"
+            strUrl = strUrl+dateFormatter.string(from: date!)
+        }
+        let url = URL(string: strUrl)
         
+        let task = URLSession.shared.dataTask(with: url!) { (data, responce, error) in
+            if error == nil {
+                let path = NSSearchPathForDirectoriesInDomains(FileManager.SearchPathDirectory.libraryDirectory, FileManager.SearchPathDomainMask.userDomainMask, true)[0]+"/data.xml"
+                let urlForSave = URL(fileURLWithPath: path)
+                do {
+                    try data?.write(to: urlForSave)
+                    print(path)
+                    print("Файл загружен")
+                    self.parseXML()
+                } catch {
+                    print("Error when save data: \(error.localizedDescription)")
+                }
+            } else {
+                print("Error when loadXMLFile:"+error!.localizedDescription)
+            }
+        }
+        
+        NotificationCenter.default.post(name: NSNotification.Name(rawValue: "startLoadingXML"), object: self)
+        
+        task.resume()
     }
     
     //Парсим XML и помещаем его в currencies, отправляем уведомление приложению о том, что данные обновились
@@ -49,11 +77,19 @@ class Model: NSObject, XMLParserDelegate {
         let parser = XMLParser(contentsOf: urlForXML)
         parser?.delegate = self
         parser?.parse()
-        print(currencies)
+        
+        print("Данные обновлены")
+        
+        NotificationCenter.default.post(name: NSNotification.Name(rawValue: "dataRefreshed"), object: self)
     }
     
     var currentCurrency: Currency?
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
+        if elementName == "ValCurs" {
+            if let currentDateString = attributeDict["Date"] {
+                currentDate = currentDateString
+            }
+        }
         if elementName == "Valute" {
             currentCurrency = Currency()
         }
